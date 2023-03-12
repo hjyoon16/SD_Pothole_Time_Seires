@@ -1,0 +1,145 @@
+---
+title: "R Notebook - Project Team 1"
+output: word_document
+---
+```{r Explorative Data Analysis}
+library(dplyr)
+library(tidyverse)
+library(fpp2)
+library(caret)
+set.seed(506)
+# Data Import
+ph <- read.csv("/Users/yhjnthn/Documents/USD_MS-ADS/ADS506/project/get_it_done_pothole_requests_datasd_v1.csv")
+# Changing date_requested format to Date format
+ph$date <- as.Date(ph$date_requested)
+# Number of rows
+count(ph) # There are 26590 cases in the data set.
+
+# Data Summary
+summary(ph)
+```
+
+Investigating most common areas that require repairs, we will look at zip codes, council_district, and comm_plan_code for the investigation.
+
+```{r zip code}
+# Zip Code Count
+ph %>% count(zipcode, sort = TRUE)
+
+# Histogram
+library(ggplot2)
+ggplot(ph) +
+  geom_bar(mapping = aes(zipcode))
+```
+
+The 10 most common areas that require repair are zipcodes 92126, 92117, 92111, 92037, 92104, 92115, 92103, 92128, 92101, and 92105.
+
+```{r council_district}
+ph %>% count(council_district, sort = TRUE)
+
+# Histogram
+ggplot(ph) +
+  geom_bar(mapping = aes(council_district))
+```
+
+The most common council districts that require repairs are 6, 3, 2, 9, 1, 7, 5, 4, and 8, in decreasing order.
+
+```{r comm_plan_code}
+ph %>% count(comm_plan_code, sort = TRUE)
+
+# Histogram
+ggplot(ph) +
+  geom_bar(mapping = aes(comm_plan_code))
+```
+
+The 10 most common community plan codes that require repairs are 6, 15, 56, 42, 20, 10, 50, 28, 57, and 31.
+
+```{r}
+# Aggregating by date
+ph2 <- aggregate(ph$service_request_id, by=list(ph$date), FUN=length)
+names(ph2)[1] = "date"
+names(ph2)[2] = "count"
+
+# Grouping by month
+ph3 <- mutate(ph2, month = format(date, "%Y-%m"))
+
+# Aggregating by date
+ph4 <- aggregate.data.frame(ph3, by = list(ph3$month), FUN = length)
+
+# subsetting into relevant months and training/validation sets
+ph_train <- ph4[11:52,]
+ph_valid <- ph4[53:57,]
+train_ts <- ts(ph_train$count, start = c(2018, 12), frequency = 12)
+valid_ts <- ts(ph_valid$count, start = c(2022, 06), frequency = 12)
+train_ts
+valid_ts
+```
+
+It is noted that, beginning December 2020, the data is more valid than the previous months.
+Thus, the data from December 2020 will be used for model construction.
+
+Naive Forecast
+
+```{r naive forecast}
+ph_naive <- naive(train_ts, 5)
+naive_pred <- forecast(ph_naive, 5)
+accuracy(naive_pred$mean, valid_ts)
+```
+
+Mean forecast
+
+```{r mean}
+ph_mean <- meanf(train_ts)
+mean_pred <- forecast(ph_mean, h= 5)
+accuracy(mean_pred$mean, valid_ts)
+```
+
+Linear Regression
+
+```{r linear regression}
+ph_lm <- tslm(train_ts ~ trend)
+lm_pred <- forecast(ph_lm, h=5)
+accuracy(lm_pred$mean, valid_ts)
+```
+
+
+ARIMA with 1 lag
+
+```{r arima}
+ph_arima <- arima(train_ts, order = c(1,0,0))
+arima_pred <- forecast(ph_arima, 5)
+accuracy(arima_pred$mean, valid_ts)
+```
+
+Exponential Smoothing
+
+```{r ets}
+ph_ets <- ets(train_ts)
+ets_pred <- forecast(ph_ets, 5)
+summary(ets_pred)
+```
+
+ANN model was fit.
+```{r eta model eval}
+accuracy(ets_pred$mean, valid_ts)
+```
+
+Neural Network
+```{r neural network}
+ph_nn <- nnetar(train_ts)
+nn_pred <- forecast(ph_nn, 5)
+accuracy(nn_pred$mean, valid_ts)
+```
+
+Visualization
+
+```{r}
+autoplot(train_ts, series = "Training values") +
+  autolayer(valid_ts, series = "Validation values") +
+  autolayer(naive_pred$mean, series = "Naive Forecast") +
+  autolayer(mean_pred$mean, series = "Mean Forecast") +
+  autolayer(lm_pred$mean, series = "Linear Forecast") +
+  autolayer(arima_pred$mean, series = "ARIMA Forecast 1-lag") +
+  autolayer(ets_pred$mean, series = "Exponential Smoothing Forecast") +
+  autolayer(nn_pred$mean, series = "Neural Network Forecast") +
+  autolayer(ph_lm$fitted.values, series = "Linear Regression on Training")
+```
